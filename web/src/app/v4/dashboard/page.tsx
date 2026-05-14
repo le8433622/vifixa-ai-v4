@@ -1,6 +1,4 @@
-// 📊 V4 DASHBOARD — AI-generated insights, không có table, không có form
-// Mọi dữ liệu được AI phân tích và tóm tắt
-
+// 📊 V4 DASHBOARD — AI insights, AI cost, accuracy, health
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -9,131 +7,141 @@ import { useRouter } from 'next/navigation'
 
 export default function V4Dashboard() {
   const router = useRouter()
-  const [insights, setInsights] = useState<any>(null)
+  const [health, setHealth] = useState<any>(null)
+  const [accuracy, setAccuracy] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [role, setRole] = useState('')
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) { router.push('/login'); return }
-      supabase.from('profiles').select('role').eq('id', session.user.id).single().then(({ data: profile }) => {
-        setRole((profile as any)?.role || 'customer')
-        taiInsights(session.access_token, (profile as any)?.role || 'customer', session.user.id)
-      })
-    })
-  }, [])
+  useEffect(() => { queueMicrotask(() => loadData()) }, [])
 
-  async function taiInsights(token: string, userRole: string, userId: string) {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-    const headers = { Authorization: `Bearer ${token}` }
-
+  async function loadData() {
     try {
-      // Lấy dữ liệu thô
-      let duLieu: any = {}
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) { router.push('/login'); return }
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+      const headers = { Authorization: `Bearer ${session.access_token}` }
 
-      if (userRole === 'customer') {
-        const { data: orders } = await supabase.from('orders').select('id, status, final_price, estimated_price, category').eq('customer_id', userId)
-        duLieu = { don: orders || [], role: 'customer' }
-      } else if (userRole === 'worker') {
-        const { data: orders } = await supabase.from('orders').select('id, status, final_price, estimated_price, category, rating').eq('worker_id', userId)
-        duLieu = { don: orders || [], role: 'worker' }
-      } else if (userRole === 'admin') {
-        const [costRes, orderRes] = await Promise.all([
-          fetch(`${supabaseUrl}/rest/v1/ai_cost_log?select=cost&order=created_at.desc&limit=100`, { headers }),
-          fetch(`${supabaseUrl}/rest/v1/orders?select=id,status,category,final_price&limit=5`, { headers }),
-        ])
-        duLieu = { chiPhi: await costRes.json(), don: await orderRes.json(), role: 'admin' }
-      }
+      // 1. Healthcheck
+      const healthRes = await fetch(`${supabaseUrl}/functions/v1/ai-healthcheck`, { headers })
+      if (healthRes.ok) setHealth(await healthRes.json())
 
-      // Gửi lên AI để phân tích
-      const res = await fetch(`${supabaseUrl}/functions/v1/v4-orchestrator`, {
-        method: 'POST',
-        headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ hanhDong: 'phan_tich', noiDung: JSON.stringify(duLieu) }),
-      })
-      const data = await res.json()
-      setInsights(data.ketQuaCuoi || data)
+      // 2. AI Agent Accuracy
+      const { data: accData } = await supabase.from('ai_agent_accuracy').select('*').limit(20)
+      setAccuracy(accData || [])
     } catch { /* ignore */ }
     setLoading(false)
   }
 
-  const INSIGHTS_MAC: Record<string, Array<{ icon: string; label: string; color: string }>> = {
-    customer: [
-      { icon: '📋', label: 'Đặt dịch vụ mới', color: 'from-blue-500 to-indigo-500' },
-      { icon: '🗺️', label: 'Xem bản đồ', color: 'from-emerald-500 to-teal-500' },
-      { icon: '💬', label: 'Chat với AI', color: 'from-violet-500 to-purple-500' },
-      { icon: '📊', label: 'Đơn hàng', color: 'from-amber-500 to-orange-500' },
-    ],
-    worker: [
-      { icon: '📋', label: 'Việc làm mới', color: 'from-blue-500 to-indigo-500' },
-      { icon: '🗺️', label: 'Tối ưu tuyến', color: 'from-emerald-500 to-teal-500' },
-      { icon: '💰', label: 'Thu nhập', color: 'from-violet-500 to-purple-500' },
-      { icon: '🎓', label: 'AI Coach', color: 'from-amber-500 to-orange-500' },
-    ],
-    admin: [
-      { icon: '🧠', label: 'Trung tâm AI', color: 'from-blue-500 to-indigo-500' },
-      { icon: '📡', label: 'Giám sát', color: 'from-emerald-500 to-teal-500' },
-      { icon: '🔥', label: 'Nhu cầu', color: 'from-violet-500 to-purple-500' },
-      { icon: '💰', label: 'Chi phí', color: 'from-amber-500 to-orange-500' },
-    ],
-  }
+  const checks = health?.checks || {}
+  const metrics = health?.metrics || {}
+  const avgAcc = accuracy.length > 0 ? (accuracy.reduce((s: number, r: any) => s + r.accuracy_pct, 0) / accuracy.length).toFixed(1) : '—'
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 space-y-6">
-      {/* AI Insights hero */}
+    <div className="flex-1 overflow-y-auto p-4 space-y-4">
       {loading ? (
-        <div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl p-6 text-white animate-pulse">
-          <p className="text-lg">AI đang phân tích...</p>
+        <div className="space-y-4 animate-pulse">
+          {[1, 2, 3].map(i => <div key={i} className="bg-gray-200 rounded-xl h-24" />)}
         </div>
       ) : (
-        <div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl p-6 text-white">
-          <p className="text-sm text-blue-200 mb-1">🤖 AI Insights</p>
-          <p className="text-lg font-bold">
-            {insights?.phanTich || insights?.deXuat?.[0] || 'Chào mừng bạn đến với Vifixa AI!'}
-          </p>
-          {insights?.deXuat && (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {(insights.deXuat as string[]).slice(0, 3).map((d: string, i: number) => (
-                <span key={i} className="px-2 py-1 bg-white/20 rounded-lg text-xs">{d}</span>
+        <>
+          {/* Status Banner */}
+          <div className={`rounded-xl p-4 text-white font-bold ${
+            health?.status === 'healthy' ? 'bg-green-500' : health?.status === 'degraded' ? 'bg-yellow-500' : 'bg-red-500'
+          }`}>
+            <p className="text-lg">
+              {health?.status === 'healthy' ? '🟢 Hệ thống hoạt động tốt' :
+               health?.status === 'degraded' ? '🟡 Hệ thống có vấn đề' : '🔴 Hệ thống gặp sự cố'}
+            </p>
+            <p className="text-sm opacity-80">v{health?.version} · {new Date(health?.timestamp).toLocaleString('vi-VN')}</p>
+          </div>
+
+          {/* Metrics Grid */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-white rounded-xl p-4 border">
+              <p className="text-xs text-gray-500">Lượt AI hôm nay</p>
+              <p className="text-2xl font-bold text-blue-600">{metrics.calls_today || 0}</p>
+            </div>
+            <div className="bg-white rounded-xl p-4 border">
+              <p className="text-xs text-gray-500">Chi phí hôm nay</p>
+              <p className={`text-2xl font-bold ${(metrics.cost_today || 0) > 1 ? 'text-red-600' : 'text-green-600'}`}>
+                ${(metrics.cost_today || 0).toFixed(4)}
+              </p>
+            </div>
+            <div className="bg-white rounded-xl p-4 border">
+              <p className="text-xs text-gray-500">Độ trễ TB</p>
+              <p className="text-2xl font-bold text-gray-900">{metrics.avg_latency || 0}ms</p>
+            </div>
+            <div className="bg-white rounded-xl p-4 border">
+              <p className="text-xs text-gray-500">Cache hit</p>
+              <p className="text-2xl font-bold text-emerald-600">{metrics.cache_hit_rate || 0}%</p>
+            </div>
+          </div>
+
+          {/* System Checks */}
+          <div className="bg-white rounded-xl border p-4">
+            <h3 className="font-bold text-sm mb-3">🔍 Kiểm tra hệ thống</h3>
+            <div className="space-y-2">
+              {[
+                { label: '🗄️ Database', check: checks.database },
+                { label: '🧠 AI Core', check: checks.ai_core },
+                { label: '🔌 NVIDIA API', check: checks.nvidia_api },
+                { label: '⚠️ Lỗi hôm nay', check: checks.recent_errors },
+              ].map(item => (
+                <div key={item.label} className="flex items-center justify-between py-2 border-b last:border-0">
+                  <span className="text-sm">{item.label}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500">
+                      {item.check?.latency_ms ? `${item.check.latency_ms}ms` : ''}
+                      {item.check?.count !== undefined ? `${item.check.count} lỗi` : ''}
+                      {item.check?.model ? `Model: ${item.check.model}` : ''}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                      item.check?.status === 'healthy' ? 'bg-green-100 text-green-700' :
+                      item.check?.status === 'warning' ? 'bg-yellow-100 text-yellow-700' :
+                      'bg-red-100 text-red-700'
+                    }`}>{item.check?.status || 'unknown'}</span>
+                  </div>
+                </div>
               ))}
             </div>
+          </div>
+
+          {/* AI Accuracy */}
+          {accuracy.length > 0 && (
+            <div className="bg-white rounded-xl border p-4">
+              <h3 className="font-bold text-sm mb-3">🎯 Độ chính xác AI (TB: {avgAcc}%)</h3>
+              <div className="space-y-2">
+                {accuracy.map((a: any) => (
+                  <div key={a.agent_type}>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="capitalize">{a.agent_type}</span>
+                      <span className={`font-bold ${a.accuracy_pct >= 80 ? 'text-green-600' : a.accuracy_pct >= 60 ? 'text-yellow-600' : 'text-red-600'}`}>
+                        {a.accuracy_pct}%
+                      </span>
+                    </div>
+                    <div className="w-full h-2 bg-gray-100 rounded-full">
+                      <div className={`h-full rounded-full transition-all ${
+                        a.accuracy_pct >= 80 ? 'bg-green-500' : a.accuracy_pct >= 60 ? 'bg-yellow-500' : 'bg-red-500'
+                      }`} style={{ width: `${a.accuracy_pct}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
-        </div>
-      )}
 
-      {/* Quick actions */}
-      <div>
-        <p className="text-sm font-bold text-gray-700 mb-3">⚡ Hành động nhanh</p>
-        <div className="grid grid-cols-2 gap-3">
-          {(INSIGHTS_MAC[role] || INSIGHTS_MAC.customer).map((item, i) => (
-            <button key={i} onClick={() => router.push(i === 0 ? '/v4/chat' : i === 1 ? '/v4' : i === 2 ? '/v4/chat' : `/v4${role === 'admin' ? '/dashboard' : ''}`)}
-              className={`bg-gradient-to-br ${item.color} rounded-xl p-4 text-white text-left hover:opacity-90 transition-opacity`}>
-              <span className="text-2xl">{item.icon}</span>
-              <p className="font-bold text-sm mt-2">{item.label}</p>
+          {/* Quick Actions */}
+          <div className="grid grid-cols-2 gap-3">
+            <button onClick={() => router.push('/v4')} className="bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-xl p-4 text-left hover:opacity-90">
+              <span className="text-2xl">🗺️</span>
+              <p className="font-bold text-sm mt-2">Bản đồ</p>
             </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Stats cards */}
-      <div>
-        <p className="text-sm font-bold text-gray-700 mb-3">📈 Thống kê nhanh</p>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="bg-white rounded-xl p-4 border">
-            <p className="text-2xl font-bold text-blue-600">
-              {role === 'customer' ? '—' : role === 'worker' ? '—' : '—'}
-            </p>
-            <p className="text-xs text-gray-500 mt-1">Tổng số</p>
+            <button onClick={() => router.push('/v4/chat')} className="bg-gradient-to-br from-emerald-500 to-teal-600 text-white rounded-xl p-4 text-left hover:opacity-90">
+              <span className="text-2xl">💬</span>
+              <p className="font-bold text-sm mt-2">Chat AI</p>
+            </button>
           </div>
-          <div className="bg-white rounded-xl p-4 border">
-            <p className="text-2xl font-bold text-green-600">—</p>
-            <p className="text-xs text-gray-500 mt-1">Hôm nay</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Bottom spacer for navigation */}
-      <div className="h-4" />
+        </>
+      )}
     </div>
   )
 }
