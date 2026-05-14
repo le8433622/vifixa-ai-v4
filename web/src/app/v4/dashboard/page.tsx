@@ -9,6 +9,8 @@ export default function V4Dashboard() {
   const router = useRouter()
   const [health, setHealth] = useState<any>(null)
   const [accuracy, setAccuracy] = useState<any[]>([])
+  const [orders, setOrders] = useState<any[]>([])
+  const [role, setRole] = useState('')
   const [loading, setLoading] = useState(true)
 
   useEffect(() => { queueMicrotask(() => loadData()) }, [])
@@ -20,13 +22,22 @@ export default function V4Dashboard() {
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
       const headers = { Authorization: `Bearer ${session.access_token}` }
 
-      // 1. Healthcheck
+      // Role
+      const { data: profile } = await supabase.from('profiles').select('role').eq('id', session.user.id).single()
+      setRole((profile as any)?.role || 'customer')
+
+      // Health + Accuracy
       const healthRes = await fetch(`${supabaseUrl}/functions/v1/ai-healthcheck`, { headers })
       if (healthRes.ok) setHealth(await healthRes.json())
-
-      // 2. AI Agent Accuracy
       const { data: accData } = await supabase.from('ai_agent_accuracy').select('*').limit(20)
       setAccuracy(accData || [])
+
+      // Orders (customer + worker)
+      const { data: orderData } = await supabase
+        .from('orders').select('id, category, description, status, estimated_price, final_price, created_at')
+        .or(`customer_id.eq.${session.user.id},worker_id.eq.${session.user.id}`)
+        .order('created_at', { ascending: false }).limit(10)
+      setOrders(orderData || [])
     } catch { /* ignore */ }
     setLoading(false)
   }
@@ -34,6 +45,7 @@ export default function V4Dashboard() {
   const checks = health?.checks || {}
   const metrics = health?.metrics || {}
   const avgAcc = accuracy.length > 0 ? (accuracy.reduce((s: number, r: any) => s + r.accuracy_pct, 0) / accuracy.length).toFixed(1) : '—'
+  const totalEarnings = orders.filter((o: any) => o.status === 'completed').reduce((s: number, o: any) => s + (o.final_price || o.estimated_price || 0), 0)
 
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -124,6 +136,35 @@ export default function V4Dashboard() {
                       }`} style={{ width: `${a.accuracy_pct}%` }} />
                     </div>
                   </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Recent Orders */}
+          {orders.length > 0 && (
+            <div className="bg-white rounded-xl border p-4">
+              <h3 className="font-bold text-sm mb-3">
+                {role === 'worker' ? `📋 Đơn gần đây · 💰 ${totalEarnings.toLocaleString()}đ` : '📋 Đơn hàng gần đây'}
+              </h3>
+              <div className="space-y-2">
+                {orders.slice(0, 5).map((o: any) => (
+                  <button key={o.id} onClick={() => router.push(`/customer/orders/${o.id}`)}
+                    className="w-full flex items-center justify-between p-3 bg-gray-50 rounded-lg text-left hover:bg-gray-100 transition-colors">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium capitalize truncate">{o.category}</p>
+                      <p className="text-xs text-gray-500 truncate">{o.description?.slice(0, 60)}</p>
+                    </div>
+                    <div className="text-right shrink-0 ml-2">
+                      <p className="text-sm font-bold">{(o.final_price || o.estimated_price || 0).toLocaleString()}đ</p>
+                      <span className={`text-xs px-1.5 py-0.5 rounded ${
+                        o.status === 'completed' ? 'bg-green-100 text-green-700' :
+                        o.status === 'in_progress' ? 'bg-blue-100 text-blue-700' :
+                        o.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                        'bg-gray-100 text-gray-600'
+                      }`}>{o.status}</span>
+                    </div>
+                  </button>
                 ))}
               </div>
             </div>
