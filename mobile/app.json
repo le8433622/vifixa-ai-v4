@@ -1,0 +1,43 @@
+{
+  "expo": {
+    "name": "vifixa-ai-mobile",
+    "slug": "vifixa-ai",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": false,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.vifixa.ai"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.vifixa.ai",
+      "versionCode": 5
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "SUPABASE_URL": "https://lipjakzhzosrhttsltwo.supabase.co",
+      "SUPABASE_ANON_KEY": "sb_publishable_8ZQN98zLEfCsvoAn2OR85g_gB9QjWEF",
+      "eas": {
+        "projectId": "0e924b1e-9fc4-46fe-8656-d894dd110640"
+      }
+    },
+    "owner": "le8433622",
+    "plugins": [
+      "expo-font",
+      "expo-secure-store"
+    ]
+  }
+}
