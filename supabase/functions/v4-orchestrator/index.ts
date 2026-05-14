@@ -55,34 +55,52 @@ Phân tích ý định:`,
     let ketQuaCuoi: unknown = null
 
     switch (hanhDong) {
-      case 'nhan_don': {
-        // Nhận đơn hàng mới → gọi Navigator + Monetizer + Humanizer
-        const { data: donHang } = await supabase.from('orders').select('*').eq('id', noiDung).single()
-        if (!donHang) {
-          loi.push('Không tìm thấy đơn hàng')
-          break
-        }
-        ketQuaCuoi = {
-          donHang: donHang.id,
-          trangThai: 'dang_xu_ly',
-          cacBuoc: ['tim_tho', 'dinh_gia', 'thong_bao'],
-        }
-        break
-      }
       case 'xu_ly_chat': {
-        // Chat → trả lời trực tiếp
-        const humanizer = await ai.orchestrateInternal('chat', async () => ({
-          systemPrompt: `Bạn là trợ lý Vifixa thân thiện. Trả lời ngắn gọn, tự nhiên, bằng tiếng Việt.
+        // Proxy to the battle-tested old ai-chat function
+        try {
+          const chatRes = await fetch(`${supabaseUrl}/functions/v1/ai-chat`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${supabaseKey}`,
+            },
+            body: JSON.stringify({
+              session_id: (nguCanh as any)?.session_id || null,
+              message: noiDung,
+              context: nguCanh || {},
+            }),
+          })
+          if (chatRes.ok) {
+            ketQuaCuoi = await chatRes.json()
+          } else {
+            // Fallback: use direct AI
+            const humanizer = await ai.orchestrateInternal('chat', async () => ({
+              systemPrompt: `Bạn là trợ lý Vifixa thân thiện. Trả lời ngắn gọn, tự nhiên, bằng tiếng Việt.
 Trả về JSON: { traLoi: string, yDinhPhatHien: string, canLayThemThongTin: bool }`,
-          userPrompt: `Người dùng: ${noiDung}
-Trả lời:`,
-        }))
-        ketQuaCuoi = {
-          traLoi: humanizer.success ? humanizer.data.traLoi : 'Xin lỗi, tôi chưa hiểu. Bạn có thể nói rõ hơn không?',
-          canLayThemThongTin: humanizer.success ? humanizer.data.canLayThemThongTin : true,
+              userPrompt: `Người dùng: ${noiDung}\nTrả lời:`,
+            }))
+            ketQuaCuoi = {
+              reply: humanizer.success ? humanizer.data.traLoi : 'Xin lỗi, chưa hiểu.',
+              session_id: null,
+              state: 'problem_capture',
+              session_complete: false,
+              actions: [],
+            }
+          }
+        } catch {
+          ketQuaCuoi = { reply: '⚠️ Hệ thống đang bận. Vui lòng thử lại.', session_id: null, state: 'error', session_complete: false, actions: [] }
         }
         break
       }
+
+      case 'nhan_don': {
+        // Nhận đơn hàng mới
+        const { data: donHang } = await supabase.from('orders').select('*').eq('id', noiDung).single()
+        if (!donHang) { loi.push('Không tìm thấy đơn hàng'); break }
+        ketQuaCuoi = { donHang: donHang.id, trangThai: 'dang_xu_ly', cacBuoc: ['tim_tho', 'dinh_gia', 'thong_bao'] }
+        break
+      }
+
       case 'phan_tich': {
         // Phân tích dữ liệu → gọi Monetizer
         const monetizer = await ai.orchestrateInternal('pricing', async () => ({
